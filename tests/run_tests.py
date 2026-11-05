@@ -246,6 +246,17 @@ got, dt = run(objs)
 print(f"     400 boxes, 2400 faces: {len(got)} selected in {dt:.2f} s")
 case("stack of 400 boxes: every inner face (1520)", len(got), 1520)
 
+# 17b. A board whose covered faces use all its corners (top and both ends):
+#      only those three, not every face of it (vertex-mode flush bug, 1.1.0).
+clear()
+top = box("Top", (1.2, 0.8, 0.06), (0, 0, 0.75))
+legs = [box(f"Leg{i}", (0.06, 0.06, 0.72), (sx * 0.54, -0.34, 0.36)) for i, sx in enumerate((1, -1))]
+apron = box("Apron", (1.02, 0.03, 0.1), (0, -0.34, 0.67))
+bpy.context.scene.tool_settings.mesh_select_mode = (True, False, False)
+got, _ = run([top, apron] + legs)
+case("board between legs under a top: only its top and two ends",
+     {g for g in got if g[0] == "Apron"}, {("Apron", "+z", 0.72), ("Apron", "+x", 0.51), ("Apron", "-x", -0.51)})
+
 # --- Parts already cleaned by hand (holes) -------------------------------
 
 def cut(ob, *dirs):

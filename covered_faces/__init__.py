@@ -412,6 +412,11 @@ class MESH_OT_select_covered_faces(bpy.types.Operator):
         for me in {ob.data for ob in objects}:
             bm = bmesh.from_edit_mesh(me)
             bm.faces.ensure_lookup_table()
+            # The tool-setting change above doesn't reach this BMesh yet. In
+            # vertex mode the flush below would also select every face whose
+            # corners are all selected, e.g. all six faces of a board whose
+            # top and both ends are covered.
+            bm.select_mode = {'FACE'}
             if not self.extend:
                 for seq in (bm.verts, bm.edges, bm.faces):
                     for elem in seq:
