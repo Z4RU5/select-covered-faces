@@ -274,7 +274,7 @@ b = box("Slim", (1, 1, 1), (0, 0, 1.5))
 cut(b, "-z")
 core = box("Core", (0.4, 0.4, 0.4), (0, 0, 1.5))
 got, _ = run([a, b, core])
-case("cleaned slim box still holds a buried core", got, only(got, "Core") if len(only(got, "Core")) == 6 else {"6 core faces"})
+case("cleaned slim box still holds a buried core", got == only(got, "Core") and len(got) == 6, True)
 
 # 19. An open bucket: the core inside can be seen, nothing selected.
 clear()

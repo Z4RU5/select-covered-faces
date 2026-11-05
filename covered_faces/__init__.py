@@ -159,7 +159,7 @@ def _encloses_volume(recs, dist):
             p1, p2 = rec.co[k], rec.co[k + 1]
             volume += p0.dot(p1.cross(p2)) / 6.0
             area += (p1 - p0).cross(p2 - p0).length / 2.0
-    return volume > dist * area / 2.0 and volume > 0.0
+    return volume > dist * area / 2.0
 
 
 def _bvh(recs):
