@@ -6,7 +6,9 @@ piece, so neither the camera nor light can ever reach it:
 
 * contact: another part's face lies on it (within the contact distance),
   facing the right way, and together those faces cover all of it;
-* buried: the rest of it sits inside other closed parts.
+* buried: the rest of it sits inside other closed parts;
+* sealed pocket: the rest of it looks into a thin space that other parts
+  close off on every side, such as the gap between a wall's two planes.
 
 Every object in Edit Mode counts as part of the piece, and every loose part
 counts as its own part, so joined meshes work too. A part with holes counts
@@ -15,6 +17,7 @@ it), so it can run again after cleaning by hand; real openings stay open.
 """
 
 import inspect
+import math
 
 import bmesh
 import bpy
@@ -33,6 +36,22 @@ _RAY_DIRS = (
 )
 # Sample grid per triangle, used only where the region crosses a part's surface.
 _SAMPLE_STEPS = 8
+
+
+def _hemisphere(count):
+    """Directions spread evenly over a half sphere around +z, straight up first."""
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+    dirs = []
+    for i in range(count):
+        z = 1.0 - (i + 0.5) / count
+        r = math.sqrt(1.0 - z * z)
+        a = golden * i
+        dirs.append((r * math.cos(a), r * math.sin(a), z))
+    return dirs
+
+
+# Lines of sight tried from each point in front of a face, for sealed pockets.
+_POCKET_DIRS = _hemisphere(256)
 
 
 class _Face:
@@ -75,6 +94,9 @@ def _gather(objects):
         bm.faces.index_update()
         mat = ob.matrix_world
         nmat = mat.inverted_safe().transposed().to_3x3()
+        # A mirrored object (negative scale) turns its winding round in world
+        # space. Turn it back so faces and hole patches stay wound outwards.
+        flip = mat.determinant() < 0.0
 
         # Loose parts: union-find over vertices joined by edges.
         parent = list(range(len(bm.verts)))
@@ -124,6 +146,8 @@ def _gather(objects):
                 bad.add(root)
                 continue
             co = [mat @ bm.verts[i].co for i in ring]
+            if flip:
+                co.reverse()
             area = Vector()
             for k in range(len(co)):
                 area += co[k].cross(co[(k + 1) % len(co)])
@@ -144,8 +168,10 @@ def _gather(objects):
                 holed.add(comp)
             else:
                 closed.add(comp)
-            faces.append(_record(ob.data.name, f.index, comp,
-                                 [mat @ v.co for v in f.verts], n, f.hide))
+            co = [mat @ v.co for v in f.verts]
+            if flip:
+                co.reverse()
+            faces.append(_record(ob.data.name, f.index, comp, co, n, f.hide))
     return faces, patches, closed, holed
 
 
@@ -290,14 +316,41 @@ def _buried(F, tris, solids, dist):
     return True
 
 
-def _is_covered(F, recs, bvh_all, solids, dist, use_buried):
+def _in_pocket(F, tris, tree, solids, dist, depth):
+    """True when the open parts of F look into a sealed pocket: a space no
+    deeper than depth in front of them, with no straight line out of the
+    piece, such as the gap between a wall's two planes, shut by the parts
+    around it. Deeper spaces (a bucket, a closed crate, a room) are kept:
+    a viewer could be in there. With solids given, points inside a closed
+    part don't count: those faces are buried, and that check is off."""
+    u, v = _basis(F.n)
+    dirs = [u * x + v * y + F.n * z for x, y, z in _POCKET_DIRS]
+    shift = F.n * max(dist * 0.5, 1e-6)
+    pushed = [[p + shift for p in t] for t in tris]
+
+    def shut(p):
+        if tree.ray_cast(p, F.n, depth)[0] is None:
+            return False  # deeper than a pocket, or the open air
+        if not all(tree.ray_cast(p, d)[0] is not None for d in dirs):
+            return False
+        return not (solids and any(_inside(solid, p) for solid, _lo, _hi in solids.values()))
+
+    # A face in the open fails at a centre, on the first ray.
+    if not all(shut((t[0] + t[1] + t[2]) / 3.0) for t in pushed):
+        return False
+    return all(shut(p) for t in pushed for p in _samples(t))
+
+
+def _is_covered(F, recs, bvh_all, solids, dist, use_buried, depth):
     covers = _contact_covers(F, recs, bvh_all, dist)
-    if not covers and not use_buried:
+    if not covers and not use_buried and depth <= 0.0:
         return False
     tris = _open_triangles(F, covers, dist)
     if not tris:
         return True
-    return use_buried and _buried(F, tris, solids, dist)
+    if use_buried and _buried(F, tris, solids, dist):
+        return True
+    return depth > 0.0 and _in_pocket(F, tris, bvh_all, None if use_buried else solids, dist, depth)
 
 
 def _world(faces, patches, closed, sealed):
@@ -318,8 +371,9 @@ def _world(faces, patches, closed, sealed):
     return recs, _bvh(recs), solids
 
 
-def find_covered(objects, dist, use_buried):
-    """{mesh name: set of face indices} covered in every instance of the mesh."""
+def find_covered(objects, dist, use_buried, pocket_depth=0.0):
+    """{mesh name: set of face indices} covered in every instance of the mesh.
+    pocket_depth 0 leaves sealed pockets out."""
     faces, patches, closed, holed = _gather(objects)
     if not faces:
         return {}
@@ -339,7 +393,7 @@ def find_covered(objects, dist, use_buried):
     while True:
         recs, bvh_all, solids = _world(faces, patches, closed, sealed)
         failed = {comp for comp in sealed
-                  if not all(_is_covered(p, recs, bvh_all, solids, dist, True)
+                  if not all(_is_covered(p, recs, bvh_all, solids, dist, True, pocket_depth)
                              for p in patches.get(comp, ()))}
         if not failed:
             break
@@ -351,7 +405,7 @@ def find_covered(objects, dist, use_buried):
             continue
         key = (F.mesh_key, F.index)
         seen[key] = seen.get(key, 0) + 1
-        if _is_covered(F, recs, bvh_all, solids, dist, use_buried):
+        if _is_covered(F, recs, bvh_all, solids, dist, use_buried, pocket_depth):
             covered[key] = covered.get(key, 0) + 1
 
     # A mesh shared by several objects: select a face only if it is covered
@@ -390,6 +444,22 @@ class MESH_OT_select_covered_faces(bpy.types.Operator):
         description="Also select faces sunk inside other closed parts",
         default=True,
     )
+    use_pockets: BoolProperty(
+        name="Sealed Pockets",
+        description="Also select faces that look into a thin space closed off on every side, "
+                    "such as the gap between a wall's two planes",
+        default=True,
+    )
+    pocket_depth: FloatProperty(
+        name="Pocket Depth",
+        description="Closed spaces up to this deep count as pockets. Deeper ones "
+                    "(the inside of a closed crate, a room) are kept: someone could look in there",
+        default=0.05,
+        min=0.0,
+        soft_max=0.5,
+        precision=3,
+        subtype='DISTANCE',
+    )
 
     @classmethod
     def poll(cls, context):
@@ -402,7 +472,8 @@ class MESH_OT_select_covered_faces(bpy.types.Operator):
         meshes = {ob.data for ob in objects}
         instances = objects + [ob for ob in context.view_layer.objects
                                if ob.data in meshes and ob not in objects]
-        result = find_covered(instances, self.distance, self.use_buried)
+        result = find_covered(instances, self.distance, self.use_buried,
+                              self.pocket_depth if self.use_pockets else 0.0)
 
         ts = context.tool_settings
         if tuple(ts.mesh_select_mode) != (False, False, True):

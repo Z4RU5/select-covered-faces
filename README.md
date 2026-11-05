@@ -13,7 +13,7 @@ It sits where Blender's own selection tools are: **Edit Mode → Select → Sele
 ## Quick guide
 
 **Install (once)**
-1. Download [`covered_faces-1.1.1.zip`](dist/covered_faces-1.1.1.zip) (or take it from [Releases](../../releases)).
+1. Download [`covered_faces-1.1.2.zip`](dist/covered_faces-1.1.2.zip) (or take it from [Releases](../../releases)).
 2. In Blender: **Edit → Preferences → Get Extensions → ⌄ (top right) → Install from Disk…** and pick the zip. It's on right away.
 
 **Use**
@@ -30,6 +30,8 @@ You can run it again at any time, also after you have cleaned parts by hand.
 | **Extend** | Add to the current selection instead of replacing it |
 | **Contact Distance** | Gaps up to this size count as touching (default 0.1 mm, like Merge by Distance) |
 | **Buried Faces** | Also select faces sunk inside other closed parts |
+| **Sealed Pockets** | Also select faces that look into a thin space closed off on every side, such as the gap between a wall's two planes |
+| **Pocket Depth** | How deep such a space may be (default 5 cm). Deeper closed spaces, like the inside of a closed crate or a room, are kept: someone could look in there |
 
 ---
 
@@ -51,6 +53,7 @@ The checks behind the pictures:
 - **Planes** count as one-sided, the way game engines draw them by default.
 - **Buried** is exact when the open part of a face crosses no other part's surface. Where it does cross one, points on a fine grid are tested.
 - **Already cleaned**: a part with holes counts as closed when every hole would itself be a covered face, sealed by a neighbour. A real opening (a bucket's top, a window) stays open. A plane never counts as a solid.
+- **Sealed pockets**: a wall made of two loose planes, closed off by the trims around it, holds no volume of its own. A plate on its front sits back to back with the front plane and looks into the gap between the two planes. Such a face is selected when the space in front of it is no deeper than the pocket depth and, from points across the face, 256 lines of sight in every direction all end on the piece. This check works by sampling, so a pinhole far smaller than the face can slip past it. Points sunk inside closed parts are left to Buried Faces.
 
 Every object in Edit Mode counts as part of the piece, and each loose part counts on its own, so joined meshes work too.
 
@@ -66,7 +69,7 @@ Every object in Edit Mode counts as part of the piece, and each loose part count
 ## Develop
 
 - Code: [`covered_faces/__init__.py`](covered_faces/__init__.py). Manifest: [`covered_faces/blender_manifest.toml`](covered_faces/blender_manifest.toml).
-- Tests (29 cases: boxes, planes, joined, rotated, buried, gaps, linked duplicates, cleaned parts, open buckets, chains, a 400-box stack timed at about 1 s):
+- Tests (36 cases: boxes, planes, joined, rotated, mirrored, buried, gaps, linked duplicates, cleaned parts, open buckets, chains, sealed pockets, a closed crate, a 400-box stack timed at about 1 s):
   `blender -b --factory-startup --python tests/run_tests.py`
 - Pictures: `blender -b --factory-startup --python docs/visuals/render_visuals.py`, then `python docs/visuals/compose.py` (needs Pillow and ffmpeg).
 - Build: `blender -b --command extension build --source-dir covered_faces --output-dir dist`
@@ -75,6 +78,7 @@ Built and tested on Blender 5.2.3; needs 4.2 or newer.
 
 ## Versions
 
+- **1.1.2** (5 Nov 2026): new: sealed pockets. A plate on a wall made of two loose planes was missed, because the gap between the planes is closed only by the parts around it; now it is selected (option **Sealed Pockets**, depth limit **Pocket Depth**). Fix: mirrored parts (negative scale) with holes were read inside out and never counted as sealed.
 - **1.1.1** (5 Nov 2026): fix: when a part's covered faces used all its corners (a board under a tabletop and between two legs), Blender's vertex select mode also selected the rest of that part. Update if you have 1.1.0 or 1.0.0.
 - **1.1.0** (5 Nov 2026): parts with holes count as closed when neighbours seal them, so it works after cleaning by hand.
 - **1.0.0** (5 Nov 2026): first version.

@@ -216,8 +216,8 @@ a = box("Thick", (2, 2, 1), (0, 0, 0.5))
 b = box("Slim", (1, 1, 1), (0, 0, 1.50005))
 got, _ = run([a, b])
 case("gap 0.05 mm, distance 0.1 mm: selected", got, {("Slim", "-z", 1.0)})
-got, _ = run([a, b], distance=0.00001)
-case("gap 0.05 mm, distance 0.01 mm: kept", got, set())
+got, _ = run([a, b], distance=0.00001, use_pockets=False)
+case("gap 0.05 mm, distance 0.01 mm, pockets off: kept", got, set())
 
 # 15. Extend keeps the old selection; without it the old selection goes.
 clear()
@@ -361,5 +361,70 @@ core = box("Core", (0.2, 0.2, 0.2), (0, 0, 1.0))  # half above the plane, in the
 got, _ = run([a, p, core])
 case("plane stays a plane: box top selected, core's upper half not buried",
      ("Box", "+z", 1.0) in got and ("Core", "+z", 1.1) not in got, True)
+
+# 27. A mirrored part (negative scale) with a hole still seals (1.1.1 read its
+#     hole and volume inside out). Pockets off, so only the sealing counts.
+clear()
+a = box("Thick", (2, 2, 1), (0, 0, 0.5))
+b = box("Slim", (1, 1, 1), (0, 0, 1.5))
+cut(b, "-z")
+b.scale = (-1, 1, 1)
+core = box("Core", (0.4, 0.4, 0.4), (0, 0, 1.5))
+got, _ = run([a, b, core], use_pockets=False)
+case("mirrored cleaned box still holds a buried core", got == only(got, "Core") and len(got) == 6, True)
+
+# --- Sealed pockets --------------------------------------------------------
+
+
+def quad(name, pts):
+    """One face through pts, its normal by the right-hand rule."""
+    me = bpy.data.meshes.new(name)
+    me.from_pydata([Vector(p) for p in pts], [], [range(len(pts))])
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(ob)
+    return ob
+
+
+def wall(posts=2):
+    """A wall of two loose planes 3 cm apart (y 0 and 0.03, facing out), its
+    gap shut by bars above and below and posts at the sides."""
+    out = [
+        quad("Front", [(-0.5, 0, -0.5), (0.5, 0, -0.5), (0.5, 0, 0.5), (-0.5, 0, 0.5)]),
+        quad("Back", [(-0.5, 0.03, 0.5), (0.5, 0.03, 0.5), (0.5, 0.03, -0.5), (-0.5, 0.03, -0.5)]),
+        box("Top", (1.2, 0.03, 0.1), (0, 0.015, 0.55)),
+        box("Bottom", (1.2, 0.03, 0.1), (0, 0.015, -0.55)),
+    ]
+    for i, x in enumerate((0.55, -0.55)[:posts]):
+        out.append(box(f"Post{i}", (0.1, 0.03, 1.0), (x, 0.015, 0)))
+    return out
+
+
+# 28. A plate on the outside of such a wall (BED-03): its back sits on the
+#     front plane, back to back, and looks into the shut gap: selected.
+clear()
+plate = box("Plate", (0.2, 0.05, 0.4), (0, -0.025, 0))
+parts = [plate] + wall()
+got, _ = run(parts)
+case("plate on a wall of two planes: its back selected", only(got, "Plate"), {("Plate", "+y", 0.0)})
+case("the wall's own planes are kept", only(got, "Front") | only(got, "Back"), set())
+got, _ = run(parts, use_pockets=False)
+case("pockets off: plate back kept", only(got, "Plate"), set())
+got, _ = run(parts, pocket_depth=0.02)
+case("gap deeper than the pocket depth: plate back kept", only(got, "Plate"), set())
+
+# 29. The same wall with one side open: the gap can be seen into, plate kept.
+clear()
+plate = box("Plate", (0.2, 0.05, 0.4), (0, -0.025, 0))
+got, _ = run([plate] + wall(posts=1))
+case("wall gap open at one side: plate back kept", only(got, "Plate"), set())
+
+# 30. A closed crate of six planks: its inside is a closed space, but too
+#     deep for a pocket (someone could look in there), so the floor is kept.
+clear()
+planks = [box("Floor", (1, 1, 0.05), (0, 0, -0.475)), box("Lid", (1, 1, 0.05), (0, 0, 0.475)),
+          box("W0", (0.05, 1, 0.9), (0.475, 0, 0)), box("W1", (0.05, 1, 0.9), (-0.475, 0, 0)),
+          box("W2", (0.9, 0.05, 0.9), (0, 0.475, 0)), box("W3", (0.9, 0.05, 0.9), (0, -0.475, 0))]
+got, _ = run(planks)
+case("closed crate: the floor's inside face is kept", ("Floor", "+z", -0.45) in got, False)
 
 print(f"\n{sum(results)}/{len(results)} passed")
