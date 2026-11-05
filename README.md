@@ -53,7 +53,7 @@ The checks behind the pictures:
 - **Planes** count as one-sided, the way game engines draw them by default.
 - **Buried** is exact when the open part of a face crosses no other part's surface. Where it does cross one, points on a fine grid are tested.
 - **Already cleaned**: a part with holes counts as closed when every hole would itself be a covered face, sealed by a neighbour. A real opening (a bucket's top, a window) stays open. A plane never counts as a solid.
-- **Sealed pockets**: a wall made of two loose planes, closed off by the trims around it, holds no volume of its own. A plate on its front sits back to back with the front plane and looks into the gap between the two planes. Such a face is selected when the space in front of it is no deeper than the pocket depth and, from points across the face, 256 lines of sight in every direction all end on the piece. This check works by sampling, so a pinhole far smaller than the face can slip past it. Points sunk inside closed parts are left to Buried Faces.
+- **Sealed pockets**: a wall made of two loose planes, closed off by the trims around it, holds no volume of its own. A plate on its front sits back to back with the front plane and looks into the gap between the two planes. Such a face is selected when the space in front of it is no deeper than the pocket depth and, from points across the face, 256 lines of sight spread over the half it faces all end on the piece. This check works by sampling, so a pinhole far smaller than the face can slip past it. Points sunk inside closed parts are left to Buried Faces.
 
 Every object in Edit Mode counts as part of the piece, and each loose part counts on its own, so joined meshes work too.
 
