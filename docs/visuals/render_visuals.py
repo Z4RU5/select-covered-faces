@@ -172,17 +172,6 @@ def aim(cam, loc, target):
     cam.rotation_euler = (Vector(target) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
 
 
-def face_point(ob, normal, pick=None):
-    """World centre of ob's face whose normal points along `normal`."""
-    bpy.context.view_layer.update()
-    n = Vector(normal).normalized()
-    rot = ob.matrix_world.to_3x3()
-    faces = [p for p in ob.data.polygons if (rot @ p.normal).normalized().dot(n) > 0.95]
-    if pick:
-        faces.sort(key=pick)
-    return ob.matrix_world @ faces[0].center
-
-
 def project(co):
     sc = bpy.context.scene
     v = world_to_camera_view(sc, sc.camera, Vector(co))
